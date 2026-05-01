@@ -7,6 +7,25 @@ export type SqlRunner = Pick<
   'execAsync' | 'runAsync' | 'getFirstAsync' | 'getAllAsync'
 >;
 
+async function getTableColumns(tableName: string) {
+  const rows = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(${tableName})`);
+  return new Set(rows.map((row) => row.name));
+}
+
+async function ensureCatalogColumns() {
+  const dishIngredientColumns = await getTableColumns('dish_ingredients');
+
+  if (!dishIngredientColumns.has('ingredient_category_id')) {
+    await db.execAsync('ALTER TABLE dish_ingredients ADD COLUMN ingredient_category_id INTEGER');
+  }
+  if (!dishIngredientColumns.has('is_mandatory')) {
+    await db.execAsync('ALTER TABLE dish_ingredients ADD COLUMN is_mandatory INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!dishIngredientColumns.has('sort_order')) {
+    await db.execAsync('ALTER TABLE dish_ingredients ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0');
+  }
+}
+
 export async function execSchema() {
   console.log('Executing database schema initialization...');
 
@@ -67,16 +86,29 @@ export async function execSchema() {
         is_allergen INTEGER NOT NULL DEFAULT 0
       );
 
+      CREATE TABLE IF NOT EXISTS ingredient_categories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        dish_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY(dish_id) REFERENCES dishes(id) ON DELETE CASCADE
+      );
+
       CREATE TABLE IF NOT EXISTS dish_ingredients (
         dish_id INTEGER NOT NULL,
         ingredient_id INTEGER NOT NULL,
+        ingredient_category_id INTEGER,
+        is_mandatory INTEGER NOT NULL DEFAULT 0,
         is_default INTEGER NOT NULL DEFAULT 1,
         extra_price REAL NOT NULL DEFAULT 0,
         can_add INTEGER NOT NULL DEFAULT 1,
         can_remove INTEGER NOT NULL DEFAULT 1,
+        sort_order INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY(dish_id, ingredient_id),
         FOREIGN KEY(dish_id) REFERENCES dishes(id) ON DELETE CASCADE,
-        FOREIGN KEY(ingredient_id) REFERENCES ingredients(id)
+        FOREIGN KEY(ingredient_id) REFERENCES ingredients(id),
+        FOREIGN KEY(ingredient_category_id) REFERENCES ingredient_categories(id) ON DELETE CASCADE
       );
 
       CREATE TABLE IF NOT EXISTS offers (
@@ -211,6 +243,8 @@ export async function execSchema() {
         external_key TEXT
       );
     `);
+
+    await ensureCatalogColumns();
 
     console.log('Database schema initialized successfully.');
   } catch (error) {

@@ -1,6 +1,6 @@
 import { createAppStore } from './appStore';
 import { getSession, getUsers } from '../data/auth';
-import { getOffers, getCategories, getDishes } from '../data/dishes';
+import { getOffers, getCategories, getIngredientCategories, getDishes } from '../data/dishes';
 import { getOrders } from '../data/orders';
 import { getAuditLogs } from '../data/audit';
 import { getBannerImages } from '../data/banners';
@@ -61,13 +61,14 @@ async function loadTopicSnapshot(
       return { session, currentUser } as TopicSnapshotMap[AppStoreTopic];
     }
     case 'catalog': {
-      const [offers, categories, dishes, banners] = await Promise.all([
+      const [offers, categories, ingredientCategories, dishes, banners] = await Promise.all([
         getOffers(),
         getCategories(),
+        getIngredientCategories(),
         getDishes(),
         getBannerImages(),
       ]);
-      return { offers, categories, dishes, banners, ingredientCategories: [], restaurantLocation: null } as TopicSnapshotMap[AppStoreTopic];
+      return { offers, categories, dishes, banners, ingredientCategories, restaurantLocation: null } as TopicSnapshotMap[AppStoreTopic];
     }
     case 'orders': {
       const orders = await getOrders();

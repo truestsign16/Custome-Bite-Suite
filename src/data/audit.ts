@@ -1,4 +1,5 @@
-import { db, SqlRunner } from './schema';
+import { db } from './schema';
+import type { SqlRunner } from './schema';
 import type { Role, AuditLog } from '../types';
 
 type AuditRow = {

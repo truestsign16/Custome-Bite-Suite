@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppButton, Card3D, Field, FloatingActionMenu, OrderStatusBadge, Pill, ScreenCard, SectionTitle, commonStyles } from '../components/common';
 import {
   useAppActions,
+  useAppStatus,
   useCatalogState,
   useMetricsState,
   useOrdersState,
@@ -314,6 +315,7 @@ export function ManagerDashboard() {
     upsertBanner,
     upsertMenuDish,
   } = useAppActions();
+  const { clearError, errorMessage } = useAppStatus();
 
   const [activeTab, setActiveTab] = useState<ManagerTab>('command');
   const [statusFilter, setStatusFilter] = useState<
@@ -494,6 +496,20 @@ export function ManagerDashboard() {
         'Image selection failed',
         error instanceof Error ? error.message : 'The selected image could not be loaded.'
       );
+    }
+  }
+
+  async function saveBanner() {
+    if (!editingBanner) {
+      return;
+    }
+
+    try {
+      clearError();
+      await upsertBanner(editingBanner);
+      setEditingBanner(null);
+    } catch {
+      // AppContext stores the user-facing error message.
     }
   }
 
@@ -1099,6 +1115,7 @@ export function ManagerDashboard() {
             />
             {editingBanner ? (
               <ScrollView contentContainerStyle={styles.modalFormContent}>
+                {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
                 {editingBanner.imageUrl ? (
                   <Image
                     source={{ uri: editingBanner.imageUrl }}
@@ -1151,7 +1168,7 @@ export function ManagerDashboard() {
                   <AppButton
                     label="Save"
                     icon='save'
-                    onPress={() => void upsertBanner(editingBanner).then(() => setEditingBanner(null))}
+                    onPress={() => void saveBanner()}
                   />
                 </View>
               </ScrollView>

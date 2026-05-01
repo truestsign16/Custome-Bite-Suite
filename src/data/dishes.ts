@@ -1,6 +1,6 @@
 import { db } from './schema';
 import { logAudit } from './audit';
-import type { Category, Dish, DishIngredient, ManagerDishPayload, Offer } from '../types';
+import type { Category, Dish, DishIngredient, IngredientCategory, ManagerDishPayload, Offer, Review } from '../types';
 
 type CategoryRow = {
   id: number;
@@ -28,12 +28,24 @@ type DishRow = {
 type DishIngredientRow = {
   dish_id: number;
   ingredient_id: number;
+  ingredient_category_id: number | null;
+  ingredient_category_name: string | null;
   ingredient_name: string;
   is_allergen: number;
+  is_mandatory: number;
   is_default: number;
   extra_price: number;
   can_add: number;
   can_remove: number;
+  sort_order: number;
+};
+
+type IngredientCategoryRow = {
+  id: number;
+  dish_id: number;
+  name: string;
+  description: string;
+  sort_order: number;
 };
 
 type ReviewRow = {
@@ -56,6 +68,22 @@ export async function getCategories() {
   );
   return rows.map<Category>((row) => ({
     id: row.id,
+    name: row.name,
+    description: row.description,
+    sortOrder: row.sort_order,
+  }));
+}
+
+export async function getIngredientCategories() {
+  const rows = await db.getAllAsync<IngredientCategoryRow>(
+    `SELECT id, dish_id, name, description, sort_order
+     FROM ingredient_categories
+     ORDER BY dish_id, sort_order, id`
+  );
+
+  return rows.map<IngredientCategory>((row) => ({
+    id: row.id,
+    dishId: row.dish_id,
     name: row.name,
     description: row.description,
     sortOrder: row.sort_order,
@@ -89,15 +117,20 @@ export async function getDishes() {
       `SELECT
          di.dish_id,
          di.ingredient_id,
+         di.ingredient_category_id,
+         ic.name AS ingredient_category_name,
          i.name AS ingredient_name,
          i.is_allergen,
+         di.is_mandatory,
          di.is_default,
          di.extra_price,
          di.can_add,
-         di.can_remove
+         di.can_remove,
+         di.sort_order
        FROM dish_ingredients di
        JOIN ingredients i ON i.id = di.ingredient_id
-       ORDER BY di.dish_id, i.name`
+       LEFT JOIN ingredient_categories ic ON ic.id = di.ingredient_category_id
+       ORDER BY di.dish_id, COALESCE(ic.sort_order, 0), di.sort_order, i.name`
     ),
     db.getAllAsync<ReviewRow>(
       `SELECT
@@ -118,11 +151,11 @@ export async function getDishes() {
     const current = acc[row.dish_id] ?? [];
     current.push({
       ingredientId: row.ingredient_id,
-      ingredientCategoryId: 0,
-      ingredientCategoryName: '',
+      ingredientCategoryId: row.ingredient_category_id ?? 0,
+      ingredientCategoryName: row.ingredient_category_name ?? 'Ingredients',
       name: row.ingredient_name,
       isDefault: !!row.is_default,
-      isMandatory: false,
+      isMandatory: !!row.is_mandatory,
       extraPrice: row.extra_price,
       canAdd: !!row.can_add,
       canRemove: !!row.can_remove,
@@ -131,7 +164,7 @@ export async function getDishes() {
     return acc;
   }, {});
 
-  const reviewMap = reviewRows.reduce<Record<number, import('../types').Review[]>>((acc, row) => {
+  const reviewMap = reviewRows.reduce<Record<number, Review[]>>((acc, row) => {
     const current = acc[row.dish_id] ?? [];
     current.push({
       id: row.id,
@@ -166,44 +199,114 @@ export async function getDishes() {
 }
 
 export async function upsertDishRecord(actorUserId: number, payload: ManagerDishPayload) {
+  let dishId = payload.id ?? 0;
+  const dishName = payload.name.trim();
+
+  await db.withExclusiveTransactionAsync(async (txn) => {
+    if (payload.id) {
+      await txn.runAsync(
+        `UPDATE dishes
+         SET category_id = ?, name = ?, description = ?, price = ?, prep_time_minutes = ?, calories = ?, spice_level = ?, is_available = ?, image_url = ?
+         WHERE id = ?`,
+        payload.categoryId,
+        dishName,
+        payload.description.trim(),
+        payload.price,
+        payload.prepTimeMinutes,
+        payload.calories,
+        payload.spiceLevel.trim(),
+        payload.isAvailable ? 1 : 0,
+        payload.imageUrl.trim(),
+        dishId
+      );
+    } else {
+      const result = await txn.runAsync(
+        `INSERT INTO dishes
+          (category_id, name, description, price, prep_time_minutes, calories, spice_level, is_available, image_url, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        payload.categoryId,
+        dishName,
+        payload.description.trim(),
+        payload.price,
+        payload.prepTimeMinutes,
+        payload.calories,
+        payload.spiceLevel.trim(),
+        payload.isAvailable ? 1 : 0,
+        payload.imageUrl.trim(),
+        new Date().toISOString()
+      );
+      dishId = Number(result.lastInsertRowId);
+    }
+
+    await txn.runAsync(`DELETE FROM dish_ingredients WHERE dish_id = ?`, dishId);
+    await txn.runAsync(`DELETE FROM ingredient_categories WHERE dish_id = ?`, dishId);
+
+    for (const [categoryIndex, category] of payload.ingredientCategories.entries()) {
+      const categoryName = category.name.trim();
+      if (!categoryName) {
+        continue;
+      }
+
+      const categoryResult = await txn.runAsync(
+        `INSERT INTO ingredient_categories (dish_id, name, description, sort_order)
+         VALUES (?, ?, ?, ?)`,
+        dishId,
+        categoryName,
+        category.description.trim(),
+        category.sortOrder ?? categoryIndex
+      );
+      const ingredientCategoryId = Number(categoryResult.lastInsertRowId);
+
+      for (const [ingredientIndex, ingredient] of category.ingredients.entries()) {
+        const ingredientName = ingredient.name.trim();
+        if (!ingredientName) {
+          continue;
+        }
+
+        const existing = await txn.getFirstAsync<{ id: number }>(
+          `SELECT id FROM ingredients WHERE lower(name) = lower(?)`,
+          ingredientName
+        );
+        let ingredientId = existing?.id ?? ingredient.ingredientId ?? 0;
+
+        if (ingredient.ingredientId && ingredientId === ingredient.ingredientId) {
+          await txn.runAsync(`UPDATE ingredients SET name = ? WHERE id = ?`, ingredientName, ingredientId);
+        } else if (!ingredientId) {
+          const ingredientResult = await txn.runAsync(
+            `INSERT INTO ingredients (name, is_allergen) VALUES (?, 0)`,
+            ingredientName
+          );
+          ingredientId = Number(ingredientResult.lastInsertRowId);
+        }
+
+        await txn.runAsync(
+          `INSERT INTO dish_ingredients
+            (dish_id, ingredient_id, ingredient_category_id, is_mandatory, is_default, extra_price, can_add, can_remove, sort_order)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          dishId,
+          ingredientId,
+          ingredientCategoryId,
+          ingredient.isMandatory ? 1 : 0,
+          ingredient.isDefault || ingredient.isMandatory ? 1 : 0,
+          Number(ingredient.extraPrice) || 0,
+          ingredient.canAdd ? 1 : 0,
+          ingredient.canRemove ? 1 : 0,
+          ingredient.sortOrder ?? ingredientIndex
+        );
+      }
+    }
+  });
+
   if (payload.id) {
-    await db.runAsync(
-      `UPDATE dishes
-       SET category_id = ?, name = ?, description = ?, price = ?, prep_time_minutes = ?, calories = ?, spice_level = ?, is_available = ?
-       WHERE id = ?`,
-      payload.categoryId,
-      payload.name.trim(),
-      payload.description.trim(),
-      payload.price,
-      payload.prepTimeMinutes,
-      payload.calories,
-      payload.spiceLevel.trim(),
-      payload.isAvailable ? 1 : 0,
-      payload.id
-    );
-    await logAudit(db, actorUserId, 'dish', payload.id, 'update', payload.name.trim());
+    await logAudit(db, actorUserId, 'dish', dishId, 'update', dishName);
   } else {
-    const result = await db.runAsync(
-      `INSERT INTO dishes
-        (category_id, name, description, price, prep_time_minutes, calories, spice_level, is_available, image_url, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', ?)`,
-      payload.categoryId,
-      payload.name.trim(),
-      payload.description.trim(),
-      payload.price,
-      payload.prepTimeMinutes,
-      payload.calories,
-      payload.spiceLevel.trim(),
-      payload.isAvailable ? 1 : 0,
-      new Date().toISOString()
-    );
     await logAudit(
       db,
       actorUserId,
       'dish',
-      Number(result.lastInsertRowId),
+      dishId,
       'create',
-      payload.name.trim()
+      dishName
     );
   }
 }
