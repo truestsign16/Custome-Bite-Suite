@@ -1,6 +1,5 @@
-import { db } from './schema';
 import { getUsers } from './auth';
-import { getOffers, getCategories, getDishes } from './dishes';
+import { getOffers, getCategories, getIngredientCategories, getDishes } from './dishes';
 import { getOrders } from './orders';
 import { getAuditLogs } from './audit';
 import { getSession } from './auth';
@@ -13,10 +12,11 @@ function nowIso() {
 }
 
 export async function loadSnapshot(): Promise<AppSnapshot> {
-  const [users, offers, categories, dishes, orders, auditLogs, session, banners] = await Promise.all([
+  const [users, offers, categories, ingredientCategories, dishes, orders, auditLogs, session, banners] = await Promise.all([
     getUsers(),
     getOffers(),
     getCategories(),
+    getIngredientCategories(),
     getDishes(),
     getOrders(),
     getAuditLogs(),
@@ -31,7 +31,7 @@ export async function loadSnapshot(): Promise<AppSnapshot> {
     offers,
     banners,
     categories,
-    ingredientCategories: [],
+    ingredientCategories,
     ingredients: [],
     dishes,
     orders,

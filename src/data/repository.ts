@@ -35,7 +35,7 @@ export { getReviews, submitReview } from './reviews';
 export { getRefunds, submitRefund, updateRefundDecision } from './refunds';
 
 // Dishes and Menu
-export { getOffers, getCategories, getDishes, upsertDishRecord, deleteDishRecord } from './dishes';
+export { getOffers, getCategories, getIngredientCategories, getDishes, upsertDishRecord, deleteDishRecord } from './dishes';
 
 // Database operations
 export { exportDatabaseJson, importDatabaseJson, resetDatabase } from './database';

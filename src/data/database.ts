@@ -5,6 +5,7 @@ const tableNames = [
   'app_session',
   'categories',
   'dishes',
+  'ingredient_categories',
   'ingredients',
   'dish_ingredients',
   'offers',

@@ -1,23 +1,6 @@
 import * as Crypto from 'expo-crypto';
-import { db, SqlRunner } from './schema';
+import { db } from './schema';
 import { logAudit } from './audit';
-
-type UserRow = {
-  id: number;
-  role: string;
-  first_name: string;
-  last_name: string;
-  username: string;
-  email: string;
-  phone: string;
-  date_of_birth: string;
-  password_hash: string;
-  address_line: string;
-  latitude: number;
-  longitude: number;
-  notes: string;
-  created_at: string;
-};
 
 function nowIso() {
   return new Date().toISOString();
@@ -105,14 +88,23 @@ export async function seedDatabase() {
     );
 
     await txn.execAsync(`
-      INSERT INTO dish_ingredients (dish_id, ingredient_id, is_default, extra_price, can_add, can_remove) VALUES
-      (1, 1, 1, 0, 0, 0), (1, 2, 1, 0, 0, 0), (1, 4, 1, 0, 1, 1), (1, 5, 1, 0, 1, 1),
-      (1, 6, 1, 1.20, 1, 1), (1, 8, 1, 0.75, 1, 1), (1, 9, 1, 0.50, 1, 1), (1, 17, 0, 1.50, 1, 0),
-      (2, 1, 1, 0, 0, 0), (2, 3, 1, 0, 0, 0), (2, 4, 1, 0, 1, 1), (2, 7, 1, 0.60, 1, 1),
-      (2, 13, 1, 0.40, 1, 1), (2, 6, 0, 1.20, 1, 0),
-      (3, 10, 1, 0, 0, 0), (3, 11, 1, 0, 0, 0), (3, 12, 1, 0, 1, 1), (3, 16, 1, 0.60, 1, 1),
-      (3, 17, 0, 1.50, 1, 0), (4, 6, 1, 0.80, 1, 1), (4, 7, 1, 0.50, 1, 1), (4, 9, 1, 0.50, 1, 1),
-      (5, 15, 1, 0, 0, 0);
+      INSERT INTO ingredient_categories (dish_id, name, description, sort_order) VALUES
+      (1, 'Ingredients', 'Default and optional burger ingredients.', 0),
+      (2, 'Ingredients', 'Default and optional burger ingredients.', 0),
+      (3, 'Ingredients', 'Default and optional bowl ingredients.', 0),
+      (4, 'Ingredients', 'Default and optional side ingredients.', 0),
+      (5, 'Ingredients', 'Default drink ingredient.', 0);
+
+      INSERT INTO dish_ingredients
+        (dish_id, ingredient_id, ingredient_category_id, is_mandatory, is_default, extra_price, can_add, can_remove, sort_order)
+      VALUES
+      (1, 1, 1, 1, 1, 0, 0, 0, 0), (1, 2, 1, 1, 1, 0, 0, 0, 1), (1, 4, 1, 0, 1, 0, 1, 1, 2), (1, 5, 1, 0, 1, 0, 1, 1, 3),
+      (1, 6, 1, 0, 1, 1.20, 1, 1, 4), (1, 8, 1, 0, 1, 0.75, 1, 1, 5), (1, 9, 1, 0, 1, 0.50, 1, 1, 6), (1, 17, 1, 0, 0, 1.50, 1, 0, 7),
+      (2, 1, 2, 1, 1, 0, 0, 0, 0), (2, 3, 2, 1, 1, 0, 0, 0, 1), (2, 4, 2, 0, 1, 0, 1, 1, 2), (2, 7, 2, 0, 1, 0.60, 1, 1, 3),
+      (2, 13, 2, 0, 1, 0.40, 1, 1, 4), (2, 6, 2, 0, 0, 1.20, 1, 0, 5),
+      (3, 10, 3, 1, 1, 0, 0, 0, 0), (3, 11, 3, 1, 1, 0, 0, 0, 1), (3, 12, 3, 0, 1, 0, 1, 1, 2), (3, 16, 3, 0, 1, 0.60, 1, 1, 3),
+      (3, 17, 3, 0, 0, 1.50, 1, 0, 4), (4, 6, 4, 0, 1, 0.80, 1, 1, 0), (4, 7, 4, 0, 1, 0.50, 1, 1, 1), (4, 9, 4, 0, 1, 0.50, 1, 1, 2),
+      (5, 15, 5, 1, 1, 0, 0, 0, 0);
 
       INSERT INTO offers (title, description, discount_percent, active_from, active_to, banner_color) VALUES
       ('Weekday Lunch Saver', '12% off bowls before 3 PM.', 12, '2026-01-01T00:00:00.000Z', '2027-01-01T00:00:00.000Z', '#D45D31'),
